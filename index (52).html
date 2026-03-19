@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADC Smart Admin Portal</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        :root { --primary: #800000; --secondary: #2c3e50; --bg: #f4f7f6; --gold: #FFD700; --success: #1b5e20; --danger: #b71c1c; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; display: flex; transition: 0.3s; overflow-x: hidden; height: 100vh; }
+        
+        nav { width: 260px; background: var(--secondary); color: white; height: 100vh; position: fixed; display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 1000; left: 0; }
+        body.sidebar-hidden nav { transform: translateX(-260px); }
+        
+        .nav-header { padding: 30px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .nav-item { padding: 18px 25px; cursor: pointer; transition: 0.3s; border-left: 4px solid transparent; display: flex; align-items: center; gap: 12px; font-size: 1rem; }
+        .nav-item.active { background: rgba(255,255,255,0.1); border-left-color: var(--primary); font-weight: bold; }
+        
+        main { margin-left: 260px; padding: 20px; width: calc(100% - 260px); transition: all 0.3s ease; box-sizing: border-box; min-height: 100vh; flex-grow: 1; display: flex; flex-direction: column; }
+        body.sidebar-hidden main { margin-left: 0; width: 100%; }
+        
+        #menu-toggle { position: fixed; left: 15px; top: 15px; z-index: 1100; background: var(--primary); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+
+        .view { display: none; animation: fadeIn 0.4s ease; width: 100%; flex-grow: 1; }
+        .view.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 25px; width: 100%; box-sizing: border-box; }
+        
+        .table-container { overflow-x: auto; max-height: 70vh; border-radius: 8px; border: 1px solid #eee; width: 100%; background: white; }
+        .styled-table { width: 100%; border-collapse: collapse; min-width: 100%; }
+        .styled-table th, .styled-table td { 
+            padding: 14px 18px; 
+            text-align: left; 
+            border-bottom: 1px solid #f0f0f0; 
+            white-space: nowrap; 
+        }
+        .styled-table th { position: sticky; top: 0; background: #fff; z-index: 10; color: var(--secondary); border-bottom: 3px solid #eee; font-weight: 700; }
+        
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+        .btn-mini { background: #1565c0; padding: 8px 16px; font-size: 0.85rem; }
+        .btn-att { width: 120px; padding: 10px; font-weight: bold; border-radius: 6px; color: white; border: none; cursor: pointer; }
+
+        .eval-panel { display: none; border-top: 8px solid var(--primary); padding-top: 30px; margin-top: 20px; width: 100%; }
+        .eval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 25px; width: 100%; }
+        .eval-section { background: #fffcfc; padding: 20px; border-radius: 10px; border: 1px solid #f2eaea; }
+        
+        select, input, textarea { padding: 12px; border: 1px solid #ddd; border-radius: 6px; width: 100%; box-sizing: border-box; margin-bottom: 12px; font-size: 1rem; }
+        label { font-weight: 700; font-size: 0.95rem; color: #2c3e50; display: block; margin-bottom: 8px; }
+
+        .att-badge { padding: 4px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
+        .att-good { background: #e8f5e9; color: #2e7d32; }
+        .att-low { background: #ffebee; color: #c62828; }
+
+        .summary-chip { padding: 6px 12px; border-radius: 15px; margin: 4px; display: inline-block; font-size: 0.85rem; font-weight: 600; }
+        .present-name { background-color: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+        .absent-name { background-color: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+
+        #admin-lock { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2000; display: none; align-items: center; justify-content: center; }
+        .lock-box { background: white; padding: 30px; border-radius: 12px; text-align: center; width: 320px; }
+    </style>
+</head>
+<body class="sidebar-hidden">
+
+<div id="admin-lock">
+    <div class="lock-box">
+        <h3 style="color:var(--primary);">Admin Authorization</h3>
+        <input type="password" id="admin-pass" placeholder="Enter Password">
+        <div style="display:flex; gap:10px; margin-top:15px;">
+            <button class="btn" style="flex:1; background:#666;" onclick="cancelAdmin()">Cancel</button>
+            <button class="btn" style="flex:1;" onclick="unlockAdmin()">Unlock</button>
+        </div>
+    </div>
+</div>
+
+<button id="menu-toggle" onclick="toggleSidebar()">☰</button>
+
+<nav id="sidebar">
+    <div class="nav-header">
+        <h2 style="margin:0; color:var(--gold); font-size: 1.4rem;">ADC PORTAL</h2>
+        <p style="font-size: 0.75rem; opacity: 0.7; margin: 5px 0 0 0;">ADMIN SUITE</p>
+    </div>
+    <div class="nav-links">
+        <div class="nav-item active" onclick="navAction('student-view', this)"><span>👤</span> Registry</div>
+        <div class="nav-item" onclick="navAction('attendance-view', this)"><span>📅</span> Attendance</div>
+        <div class="nav-item" id="admin-nav-btn" onclick="requestAdmin(this)"><span>⚙️</span> Admin</div>
+    </div>
+</nav>
+
+<main>
+    <div id="student-view" class="view active">
+        <div class="card">
+            <div style="display:flex; gap:20px; margin-bottom:20px; align-items: flex-end; width: 100%;">
+                <div style="width: 300px;"><label>Batch Select</label><select id="sheet-selector" onchange="loadBatchData(this.value)"></select></div>
+                <div style="flex:1;"><label>Search Student Name or ID</label><input type="text" id="regSearch" onkeyup="renderRegistry()" placeholder="Start typing to filter results..."></div>
+            </div>
+            <div id="loading-spinner" style="display:none; color: var(--primary); font-weight: bold; margin-bottom: 10px;">🔄 Syncing...</div>
+            <div class="table-container">
+                <table class="styled-table">
+                    <thead id="reg-head"></thead>
+                    <tbody id="reg-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="eval-panel" class="card eval-panel">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom:25px;">
+                <h3 id="eval-name" style="margin:0; color:var(--primary); font-size: 1.5rem;">Student Evaluation</h3>
+                <button class="btn" style="background:#666;" onclick="closeEval()">✕ Close Panel</button>
+            </div>
+            <div class="eval-grid">
+                <div class="eval-section">
+                    <h4 style="color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 5px;">ANGIKA</h4>
+                    <label>1. Anga & Upanga Coordination</label><select id="e1"></select>
+                    <label>2. Clarity in Movements</label><select id="e2"></select>
+                    <label>3. Energy (Power & Grace)</label><select id="e3"></select>
+                    <label>4. Style Management</label><select id="e4"></select>
+                </div>
+                <div class="eval-section">
+                    <h4 style="color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 5px;">VACHIKA</h4>
+                    <label>Recitation of Jatis/Bols</label><select id="e5"></select>
+                    <label>Recitation of Shlokas</label><select id="e6"></select>
+                    <h4 style="margin-top:25px; color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 5px;">AHARYA</h4>
+                    <label>Dress / Hair / Ghungroo</label><select id="e7"></select>
+                </div>
+                <div class="eval-section">
+                    <h4 style="color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 5px;">SATHVIKA</h4>
+                    <label>1. Feeling Ananda</label><select id="e8"></select>
+                    <label>2. Expression to Dance</label><select id="e9"></select>
+                    <label>3. Response to Music</label><select id="e10"></select>
+                </div>
+                <div class="eval-section">
+                    <h4 style="color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 5px;">SPECIFIC OBSERVATIONS</h4>
+                    <label>1. Communication with faculty</label><select id="e11"></select>
+                    <label>2. Punctuality & Regularity</label><select id="e12"></select>
+                    <label>3. Attention in class</label><select id="e13"></select>
+                </div>
+            </div>
+            <div style="margin-top:25px;">
+                <label>ADDITIONAL INPUTS & FEEDBACK</label>
+                <textarea id="e_feedback" rows="5" placeholder="Enter detailed performance observations..."></textarea>
+            </div>
+            <button class="btn" style="width:100%; padding:22px; margin-top:20px; font-size: 1.2rem; box-shadow: 0 4px 15px rgba(128,0,0,0.2);" onclick="generatePDF()">GENERATE PERFORMANCE REPORT</button>
+        </div>
+    </div>
+
+    <div id="attendance-view" class="view">
+        <div class="card">
+            <h2>Attendance Log</h2>
+            <div style="display:flex; gap:20px; align-items:flex-end; margin-bottom:20px; flex-wrap: wrap;">
+                <div style="width:220px;">
+                    <label>Session Date</label>
+                    <input type="date" id="att-date" onchange="renderAttendance()">
+                </div>
+                <div style="flex:1; min-width: 250px;">
+                    <label>Session Notes</label>
+                    <textarea id="attendance-notes" rows="1" placeholder="What was taught today?"></textarea>
+                </div>
+                <span id="lock-status" style="font-weight:bold; margin-bottom: 15px;"></span>
+            </div>
+            <div class="table-container">
+                <table class="styled-table">
+                    <thead><tr><th>ID</th><th>Name</th><th>Status</th></tr></thead>
+                    <tbody id="att-body"></tbody>
+                </table>
+            </div>
+            <button class="btn" id="finalize-btn" style="width:100%; margin-top:25px; padding:20px;" onclick="saveAttendance()">FINALIZE & LOCK SESSION</button>
+            
+            <div id="attendance-summary" class="card" style="display:none; margin-top:20px; border-top: 5px solid var(--primary);">
+                <div id="summary-stats" style="font-weight:bold; font-size:1.2rem; margin-bottom:15px; color: var(--secondary);"></div>
+                <div id="present-list-container">
+                    <h4 style="color: #2e7d32; margin-bottom: 8px;">Present Students:</h4>
+                    <div id="present-list"></div>
+                </div>
+                <div id="absent-list-container" style="margin-top:20px;">
+                    <h4 style="color: #c62828; margin-bottom: 8px;">Absent Students:</h4>
+                    <div id="absent-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="admin-view" class="view">
+        <div class="card">
+            <h2>Admin Controls</h2>
+            <button class="btn" style="background:var(--danger); width:100%; margin-top:50px;" onclick="resetSystem()">RESET PORTAL</button>
+        </div>
+    </div>
+</main>
+
+<script>
+    const BRIDGE_URL = "https://script.google.com/macros/s/AKfycbzRSE364_p7Z06S6ya5Vl9OwNQwBNBX4eqF2MnUcoGuGJEGUGqxca2YbuQX9Dz-Yko30Q/exec";
+    const GID_MAP = {
+        "Adithi 5pm": "0", "Adithi 6pm": "1940190562", "Apoorva 7am": "1219244783", "Apoorva 8pm": "547653971",
+        "Ashwin 7am": "1712559510", "Ashwin 8am": "648436978", "Ashwin 9am": "577886897", "Bhavana 6pm": "31263772",
+        "Bhavana 8pm": "454069742", "Kavana Tue-Thu": "890169562", "Kavana Sat-Sun": "441906484", "Harshita": "1013468643",
+        "Manasa": "605027068", "Pooja 6pm": "1879163972"
+    };
+
+    let currentData = [], currentBatchName = "", selectedStudent = null;
+    let historyDB = JSON.parse(localStorage.getItem('adc_db')) || {};
+    let lockedDates = JSON.parse(localStorage.getItem('adc_locks')) || [];
+
+    window.onload = () => {
+        const selector = document.getElementById('sheet-selector');
+        Object.keys(GID_MAP).forEach(name => selector.options.add(new Option(name, name)));
+        loadBatchData(Object.keys(GID_MAP)[0]);
+        document.getElementById('att-date').valueAsDate = new Date();
+        
+        for(let i=1; i<=13; i++) {
+            const sel = document.getElementById('e' + i);
+            if(sel) { for(let j=10; j>=1; j--) sel.options.add(new Option(j, j)); sel.value = 8; }
+        }
+    };
+
+    async function loadBatchData(batchName) {
+        currentBatchName = batchName;
+        document.getElementById('loading-spinner').style.display = 'block';
+        try {
+            const response = await fetch(`${BRIDGE_URL}?gid=${GID_MAP[batchName]}`);
+            const data = await response.json();
+            if (data.length > 0) {
+                const headers = data[0];
+                currentData = data.slice(1).map(row => {
+                    let obj = {};
+                    headers.forEach((h, index) => obj[h] = row[index]);
+                    return obj;
+                });
+                renderRegistry();
+            }
+            document.getElementById('loading-spinner').style.display = 'none';
+        } catch (e) { console.error(e); }
+    }
+
+    function renderRegistry() {
+        if (!currentData.length) return;
+        const headers = Object.keys(currentData[0]);
+        document.getElementById('reg-head').innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}<th>Action</th></tr>`;
+        const query = document.getElementById('regSearch').value.toLowerCase();
+        const filtered = currentData.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(query)));
+        document.getElementById('reg-body').innerHTML = filtered.map(row => {
+            return `<tr>${headers.map(h => `<td>${row[h] || '-'}</td>`).join('')}<td><button class="btn btn-mini" onclick='openEval(${JSON.stringify(row)})'>Evaluate</button></td></tr>`;
+        }).join('');
+    }
+
+    function toggleSidebar() { document.body.classList.toggle('sidebar-hidden'); }
+    function navAction(viewId, el) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+        if(el) el.classList.add('active');
+        if(viewId === 'attendance-view') renderAttendance();
+    }
+
+    function openEval(studentData) {
+        selectedStudent = studentData;
+        const nameKey = Object.keys(studentData)[1];
+        document.getElementById('eval-name').innerText = "Evaluating: " + studentData[nameKey];
+        document.getElementById('eval-panel').style.display = 'block';
+        document.getElementById('eval-panel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function closeEval() { document.getElementById('eval-panel').style.display = 'none'; }
+
+    function renderAttendance() {
+        const date = document.getElementById('att-date').value;
+        if(!date || !currentBatchName) return;
+        const key = currentBatchName + "_" + date;
+        if(!historyDB[key]) historyDB[key] = { attendance: {}, notes: "" };
+        
+        document.getElementById('attendance-notes').value = historyDB[key].notes || "";
+        
+        const isLocked = lockedDates.includes(key);
+        document.getElementById('lock-status').innerText = isLocked ? "🔒 Locked" : "🔓 Editing";
+        document.getElementById('finalize-btn').disabled = isLocked;
+        document.getElementById('attendance-notes').disabled = isLocked;
+        document.getElementById('attendance-summary').style.display = isLocked ? 'block' : 'none';
+
+        const idKey = Object.keys(currentData[0])[0];
+        const nameKey = Object.keys(currentData[0])[1];
+        document.getElementById('att-body').innerHTML = currentData.map(row => {
+            const id = row[idKey], name = row[nameKey];
+            const status = (historyDB[key].attendance && historyDB[key].attendance[id]) || 'A';
+            return `<tr data-id="${id}" data-name="${name}"><td>${id}</td><td>${name}</td><td><button class="btn-att" style="background:${status==='P'?'green':'red'}" ${isLocked?'disabled':''} onclick="toggleAtt(this, '${id}', '${key}')">${status==='P'?'Present':'Absent'}</button></td></tr>`;
+        }).join('');
+        
+        if(isLocked) updateSummaryUI();
+    }
+
+    function toggleAtt(btn, id, key) {
+        const isPresent = btn.innerText === "Present";
+        const newStatus = isPresent ? 'A' : 'P';
+        btn.innerText = newStatus === 'P' ? 'Present' : 'Absent';
+        btn.style.background = newStatus === 'P' ? 'green' : 'red';
+        if(!historyDB[key].attendance) historyDB[key].attendance = {};
+        historyDB[key].attendance[id] = newStatus;
+    }
+
+    function updateSummaryUI() {
+        let p = 0, a = 0;
+        const pList = document.getElementById('present-list'), aList = document.getElementById('absent-list');
+        pList.innerHTML = ""; aList.innerHTML = "";
+        document.querySelectorAll('#att-body tr').forEach(tr => {
+            const name = tr.dataset.name, status = tr.querySelector('button').innerText;
+            if(status === "Present") { pList.innerHTML += `<span class="summary-chip present-name">${name}</span>`; p++; }
+            else { aList.innerHTML += `<span class="summary-chip absent-name">${name}</span>`; a++; }
+        });
+        document.getElementById('summary-stats').innerText = `Present: ${p} | Absent: ${a}`;
+    }
+
+    function saveAttendance() {
+        const date = document.getElementById('att-date').value;
+        if(!date) return alert("Select date");
+        const key = currentBatchName + "_" + date;
+        historyDB[key].notes = document.getElementById('attendance-notes').value;
+        if(!lockedDates.includes(key)) lockedDates.push(key);
+        localStorage.setItem('adc_db', JSON.stringify(historyDB));
+        localStorage.setItem('adc_locks', JSON.stringify(lockedDates));
+        renderAttendance();
+        document.getElementById('attendance-summary').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function requestAdmin() { document.getElementById('admin-lock').style.display = 'flex'; }
+    function unlockAdmin() { if(document.getElementById('admin-pass').value === "ADC2026") { document.getElementById('admin-lock').style.display = 'none'; navAction('admin-view', document.getElementById('admin-nav-btn')); } }
+    function cancelAdmin() { document.getElementById('admin-lock').style.display = 'none'; }
+    function resetSystem() { if(confirm("Clear data?")) { localStorage.clear(); location.reload(); } }
+
+    function generatePDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const s = selectedStudent;
+        const nameKey = Object.keys(s)[1];
+        const idKey = Object.keys(s)[0];
+
+        doc.setFillColor(128, 0, 0); doc.rect(0, 0, 210, 35, 'F');
+        doc.setTextColor(255, 215, 0); doc.setFontSize(22);
+        doc.text("ABHINAVA DANCE COMPANY", 105, 18, { align: "center" });
+        
+        doc.setTextColor(0,0,0);
+        doc.text(`Student: ${s[nameKey]}`, 14, 45);
+        doc.save(`ADC_Report_${s[idKey]}.pdf`);
+    }
+</script>
+</body>
+</html>
